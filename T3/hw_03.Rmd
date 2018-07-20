@@ -1,0 +1,539 @@
+---
+title: "Third Week: Exploratory Data Analysis"
+subtitle: "LaLiga Analysis"
+author: "محمد مهدی رفیعی"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/laliga-lo.jpg"  align = 'center'>
+</div>
+
+<h1 dir="RTL"> 
+تمرین سری سوم: از لالیگا تا لیگ برتر
+</h1>
+
+> <p dir="RTL"> 
+با استفاده از داده های لیگ دسته اول اسپانیا به سوالات زیر پاسخ دهید.
+از هر دو ابزار
+ggplot2
+و
+highcharter
+برای این کار تصویرسازی استفاده نمایید.
+</p>
+
+***
+### setup
+<p dir="RTL">
+علاوه بر بارگذاری کتابخانههای مناسب، از ایده تکرار همه بازیها استفاده میکنیم.
+</p>
+
+```{r setup, message=F}
+library(tidyverse)
+library(engsoccerdata)
+library(highcharter)
+library(ggthemes)
+spain %>% filter(round == "league") -> spain
+spain <- as.tbl(spain)
+spain %>% 
+    select(team = home, opponent = visitor , team_goal = hgoal, opponent_goal = vgoal, Season, Date) -> games_by_home
+
+
+spain %>% 
+    select(team = visitor, opponent = home , team_goal = vgoal, opponent_goal = hgoal, Season, Date) -> games_by_visitor
+
+rbind(games_by_home, games_by_visitor) -> games_by_team
+
+
+```
+
+<p dir="RTL">
+۱. تعداد قهرمانی های تیم ها در تاریخ لالیگا  را استخراج کرده و نمودار ستونی آنها را رسم کنید.
+</p>
+
+<p dir="RTL">
+جدول لیگ را برای هر فصل به دست میآوریم و با استفاده از آن قهرمانها را ذخیره میکنیم و به نمایش میگذاریم.
+</p>
+
+```{r champions}
+games_by_team %>%
+    group_by(Season, team) %>% 
+    summarise(W = sum(team_goal>opponent_goal),
+              E = sum(team_goal==opponent_goal),
+              L = sum(team_goal<opponent_goal),
+              goals = sum(team_goal),
+              score = (3*sum(team_goal>opponent_goal)) + sum(team_goal==opponent_goal),
+              GD = sum(team_goal-opponent_goal)
+              ) %>% arrange(desc(score), desc(GD)) -> league_table
+
+
+league_table %>% 
+    group_by(Season) %>%  
+    slice(1) %>% 
+    group_by(team) %>% 
+    summarise(wins = sum(team == team)) -> Winners
+
+Winners %>% arrange(desc(wins)) %>% 
+    hchart(type = "column", hcaes(x = team, y = wins), name = "championships")
+    
+```
+
+
+***
+
+<p dir="RTL">
+۲. کسل کننده ترین لیگ و تیم را بیابید.
+نمودار ده تیم و ده فصل کسل کننده را رسم کنید.
+</p>
+
+<p dir="RTL">
+تیم کسل کننده تیمیست که در بازیهای آن تیم کمترین تعداد گل به ثمر برسد و فصل کسل کننده فصلی کم گل است.
+</p>
+
+
+```{r boring-seasons}
+spain %>% 
+    group_by(Season) %>% 
+    summarise(boringness = 100/(sum(hgoal+vgoal)) ) %>% arrange(-boringness) %>% head(10) %>% 
+    hchart(type = "column", hcaes(x = as.character(Season), y = boringness))
+```
+
+
+```{r boring-teams}
+games_by_team %>% 
+    group_by(team) %>% 
+    summarise(fun_to_watch_factor =  sum(team_goal+opponent_goal)/sum(team==team)) %>% 
+    arrange(fun_to_watch_factor) %>% head(10) -> boring_teams
+
+boring_teams %>% 
+    hchart(type = "bar", hcaes(x = team, y = fun_to_watch_factor), name = "fun to watch factor")
+
+```
+
+***
+
+<p dir="RTL">
+۳. در چند درصد موارد قهرمان نیم فصل در پایان فصل قهرمان شده است؟
+</p>
+
+<p dir="RTL">
+با حساب کردن نیمفصل بر اساس برگذار شدن نیمی از تعداد کل بازیها، این سوال به سادگی قابل حل است. 
+</p>
+
+
+```{r half_season_to_championship}
+
+spain %>% 
+    group_by(Season) %>% 
+    arrange(Date) %>% 
+    slice(1:floor(sum(Season==Season)/2)) -> half_seasons
+
+half_seasons %>% 
+    select(team = home, opponent = visitor , team_goal = hgoal, opponent_goal = vgoal, Season, Date) -> half_games_by_home
+
+
+half_seasons %>% 
+    select(team = visitor, opponent = home , team_goal = vgoal, opponent_goal = hgoal, Season, Date) -> half_games_by_visitor
+
+rbind(half_games_by_home, half_games_by_visitor) -> half_games_by_team
+
+
+half_games_by_team %>%
+    group_by(Season, team) %>% 
+    summarise(W = sum(team_goal>opponent_goal),
+              E = sum(team_goal==opponent_goal),
+              L = sum(team_goal<opponent_goal),
+              goals = sum(team_goal),
+              score = (3*sum(team_goal>opponent_goal)) + sum(team_goal==opponent_goal),
+              GD = sum(team_goal-opponent_goal)
+    ) %>% arrange(desc(score), desc(GD)) -> half_league_table
+
+
+half_league_table %>% 
+    group_by(Season) %>% 
+    slice(1) %>% 
+    select(Season, half_season_winner = team, half_league_score = score) -> half_league_winners
+
+league_table %>% 
+    group_by(Season) %>% 
+    slice(1) %>% 
+    select(Season, winner = team, full_score = score) -> league_winners
+
+full_join(half_league_winners, league_winners) %>% 
+    group_by(Season) %>% 
+    summarise(same_winner_for_half = half_season_winner == winner) %>% .$same_winner_for_half -> rate
+
+sum(rate) / length(rate)
+
+
+```
+
+
+***
+
+<p dir="RTL">
+۴. در بین سال های ۲۰۰۱ تا ۲۰۱۰ گربه سیاه تیم های بزرگ چه تیم هایی بوده است؟
+</p>
+
+<p dir="RTL">
+گربه سیاه را تیمی میدانیم که ضعیف باشد و تیم قوی را شکست داده باشد. قدرت نیز بر اساس تعداد بردهای تیم در طول سالهای مذکور تعریف میکنیم.
+</p>
+
+
+```{r black_cat}
+games_by_team %>% 
+    filter(Season >= 2001 & Season <= 2010) %>% 
+    group_by(team) %>% 
+    summarise(strongness = sum(team_goal>opponent_goal)) %>% 
+    arrange(desc(strongness)) %>% 
+    head(4) %>% .$team -> strongteams
+
+games_by_team %>% 
+    filter(Season >= 2001 & Season <= 2010) %>% 
+    group_by(team) %>% 
+    summarise(strongness = sum(team_goal>opponent_goal)) %>% 
+    arrange(desc(strongness)) %>% 
+    tail(10) %>% .$team -> weakteams
+
+games_by_team %>% 
+    filter(Season >= 2001 & Season <= 2010) %>% 
+    filter(team %in% strongteams & opponent %in% weakteams & team_goal < opponent_goal) %>% 
+    .$opponent %>% unique 
+
+```
+
+
+***
+
+<p dir="RTL">
+۵. در تاریخ لالیگا کدام تیم رکورددار زودترین قهرمانی است؟
+همچنین کدام تیم مقتدرانه ترین قهرمانی را داشته است؟
+</p>
+
+<p dir="RTL">
+به طور کلی برای هر تاریخ موجود در داده، جدول لیگ را رسم میکنیم، اگر اختلاف امتیاز تیم اول و دوم بیشتر از سه برابر تعداد بازیهای باقیمانده تیم دوم باشد، تیم دوم به هیچ وجه نمیتواند به تیم اول برسد(و همینطور باقی تیمها) و تیم اول قهرمان است. در غیر این صورت اگر تیم اول تمامی بازیهایش را ببازد و تیم دوم ببرد، تیم اول فعلی لزوما قهرمان نخواهد شد.(تفاضل گل نیز قابل جبران است)
+</p>
+
+```{r earliest_championship}
+spain %>% 
+    select(s = Season, d = Date, home, visitor, hgoal, vgoal) %>% 
+    group_by(s, d) %>% 
+    summarise(remaining_games = nrow(spain %>% filter(Season == s[1] & Date > d[1]) )) -> remaining_games
+
+
+finished_league <- function(season, date){
+    games_by_team %>% 
+        filter(Season == season, Date <= date) %>% 
+        group_by(Season, team) %>% 
+        summarise(score = (3*sum(team_goal>opponent_goal)) + sum(team_goal==opponent_goal) ) %>%
+        arrange(desc(score)) -> league_table
+    league_table %>% slice(1:2) -> win_and_run
+    
+    
+    win_and_run$score[1] - win_and_run$score[2] -> gap
+    
+    games_by_team %>% 
+        filter(Season == season, Date > date, team == win_and_run$team[2] ) %>% nrow -> remaining
+
+    return(remaining * 3 < gap)
+}
+
+remaining_games %>% 
+    group_by(s, d) %>% 
+    summarise(finished = finished_league(season = s[1], date = d[1])) -> finishing_result
+
+finishing_result %>% 
+    group_by(s) %>%
+    filter(finished == T) %>% 
+    slice(which.min(d)) %>% 
+    group_by(s, d) %>% 
+    summarise(
+        earlyness = 
+            (remaining_games %>% select(S = s, D = d, remaining_games) %>% filter(S == s, D == d) %>% .$remaining_games) ) %>% 
+    arrange(-earlyness) %>%  select(s, earlyness) %>% head(3)
+
+```
+
+
+<p dir="RTL">
+برای قسمت دوم اختلاف امتیاز تیم اول و دوم را عامل اقتدار تیم قهرمان میدانیم.
+</p>
+
+```{r strong-champ}
+league_table %>% 
+    group_by(Season) %>% 
+    summarise(gap = score[1] - score[2]) %>%
+    arrange(-gap) %>% 
+    head(1)
+```
+
+
+***
+
+<p dir="RTL">
+۶. طولانی ترین نوار پیروزی مساوی و شکست مال چه تیم هایی است؟
+</p>
+
+```{r streaks}
+calc_streak <- function(games, func){
+    if(func == "win")
+        cmp <- function(g){return(g>0)}
+    if(func == "lost")
+        cmp <- function(g){return(g<0)}
+    if(func == "tie")
+        cmp <- function(g){return(g==0)}
+    last = F
+    cur_streak = 0
+    max_streak = 0
+    for(g in games){
+        if(cmp(g) & last)
+            cur_streak = cur_streak + 1
+        else if(cmp(g) & !last){
+            last = T
+            cur_streak = 1
+        }
+        else{
+            last = F
+            cur_streak = 0
+        }
+        max_streak = max(cur_streak, max_streak)
+    }
+    return (max_streak)
+}
+
+
+games_by_team %>% 
+    arrange(Date) %>% 
+    mutate(GD = team_goal - opponent_goal) %>% 
+    group_by(team) %>% 
+    summarise(
+        win_streak = calc_streak(GD,"win"),
+        lost_streak = calc_streak(GD,"lost"),
+        tie_streak = calc_streak(GD,"tie") 
+        ) -> streaks
+
+streaks %>% arrange(-win_streak) %>% head(1) -> winner
+print(c(winner$team, winner$win_streak))
+
+streaks %>% arrange(-lost_streak) %>% head(1) -> looser
+print(c(looser$team, looser$lost_streak))
+
+streaks %>% arrange(-tie_streak) %>% head(1) -> tier
+print(c(tier$team, tier$tie_streak))
+
+```
+
+
+***
+
+<p dir="RTL">
+۷. زودترین سقوط مال کدام تیم بوده است؟
+</p>
+
+<p dir="RTL">
+این سوال مانند سوال ۵ است. با این تفاوت که باید به جای تیم اول و دوم ، تیم آخر و از آخر چهارم را در نظر بگیریم.
+</p>
+
+```{r earliest-fall}
+
+finished_league <- function(season, date){
+    nteam = spain %>% filter(Season == season) %>% .$home %>% unique %>% length
+    games_by_team %>% 
+        filter(Season == season, Date <= date) %>% 
+        group_by(Season, team) %>% 
+        summarise(score = (3*sum(team_goal>opponent_goal)) + sum(team_goal==opponent_goal) ) %>%
+        arrange(desc(score)) -> league_table
+    league_table %>% slice(c(nteam-3, nteam)) -> last_and_fourth
+    
+    
+    last_and_fourth$score[1] - last_and_fourth$score[2] -> gap
+    
+    games_by_team %>% 
+        filter(Season == season, Date > date, team == last_and_fourth$team[2] ) %>% nrow -> remaining
+    
+    return(remaining * 3 < gap)
+}
+
+remaining_games %>% 
+    group_by(s, d) %>% 
+    summarise(finished = finished_league(season = s[1], date = d[1])) -> finishing_result
+
+finishing_result %>% 
+    group_by(s) %>%
+    filter(finished == T) %>% 
+    slice(which.min(d)) %>% 
+    group_by(s, d) %>% 
+    summarise(
+        earlyness = 
+            (remaining_games %>% select(S = s, D = d, remaining_games) %>% filter(S == s, D == d) %>% .$remaining_games) ) %>% 
+    arrange(-earlyness) %>% select(s, earlyness) %>% head(3)
+
+```
+
+
+***
+
+<div align="center">
+<img  src="images/standings.png"  align = 'center'>
+</div>
+
+<p dir="RTL">
+۸.مانند شکل بالا تصویری از روند تغییر رتبه تیم ها در طول فصل ۱۹۹۸ رسم نمایید.
+</p>
+
+```{r lines_to_win}
+
+games_by_team %>%
+    filter(Season == 1998) %>% 
+    group_by(team, Date) %>% 
+    summarise(W = sum(team_goal>opponent_goal),
+              E = sum(team_goal==opponent_goal),
+              L = sum(team_goal<opponent_goal),
+              goals = sum(team_goal),
+              day_score = (3*sum(team_goal>opponent_goal)) + sum(team_goal==opponent_goal),
+              day_GD = sum(team_goal-opponent_goal)
+    ) %>% arrange(desc(day_score), desc(day_GD)) -> season_table
+
+season_table %>% 
+    arrange(Date) %>% 
+    group_by(team) %>% 
+    mutate(cum_score = cumsum(day_score),
+           cum_GD = cumsum(day_GD)) %>% 
+    select(Date, team, score = cum_score, GD = cum_GD) -> time_table
+
+time_table$team %>% unique -> teams
+
+data.frame(date=as.Date(character()), team = character(), Position = integer() ) -> res
+as.tbl(res) -> res
+
+days_to_show <- time_table$Date %>% unique %>% sort
+
+for (i in 3:length(days_to_show)){
+    d = days_to_show[i]
+    games_by_team %>%
+        filter(Season == 1998, Date <= d) %>% 
+        group_by(team) %>% 
+        summarise(day_score = (3*sum(team_goal>opponent_goal)) + sum(team_goal==opponent_goal),
+                  day_GD = sum(team_goal-opponent_goal)
+        ) %>% arrange(desc(day_score), desc(day_GD)) -> day_table
+    
+    for(t in teams) {
+        res <- rbind(res, tibble(date = d, team = t, Position = match(c(t),day_table$team) ) )
+    }
+}
+
+#ggplot(res , mapping = aes(x = date, y = Position, color = team)) + geom_line()
+
+res %>% 
+    hchart(type = "line", hcaes(x = date, y = Position, group = team)) %>% 
+    hc_xAxis(tickInterval = 40) %>% 
+    hc_yAxis_multiples(
+        list(title = list(text = "Position"), tickInterval = 1, max = 20, min = 1, reversed = T),
+        list( opposite = T, title = list(enabled = F), tickInterval = 1 , max = 19, min = 0 , reversed = T,
+              categories = day_table$team 
+              )
+        ) %>% 
+    hc_legend(enabled = F)
+```
+
+
+***
+
+<div align="center">
+<img  src="images/bd_10.gif"  align = 'center'>
+</div>
+
+<p dir="RTL">
+۹. جدولی مشابه بالا برای فصل ۲۰۱۲ از  کل نتایج طراحی کنید.
+</p>
+
+```{r result-matrix}
+ggplot(data = spain %>% filter(Season == 2012), aes( reorder(home,desc(home)), visitor ))+
+    geom_tile(alpha = 0) +
+    geom_text(aes(label = FT))+
+    scale_x_discrete(position = "top") +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = -0.1) ,
+        panel.border = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()
+        ) +
+    geom_abline(intercept = 21, slope = -1, size = 0.5, color = 'white') 
+
+```
+
+
+***
+
+<p dir="RTL">
+۱۰. سه آماره به همراه نمودار فردوسی پسند استخراج کنید.
+</p>
+### elclassico matchups over the years
+
+<p dir="RTL">
+در نمودار زیر هر نقطه بیانگر یک بازی الکلاسیکو است. ارتفاع آن بیانگر گلهای بارسا منهای گلهای رئال است و طول آن بیانگر زمان رخ دادن بازیست.
+</p>
+
+```{r elclassico}
+# el classico matchups
+
+games_by_team %>% filter(team == "FC Barcelona", opponent == "Real Madrid") %>% 
+    arrange(Date) %>% 
+    ggplot() +
+    geom_line(aes(x = Date, y = (team_goal - opponent_goal) )) +
+    geom_point(aes(x = Date, y = (team_goal - opponent_goal) )) +
+    geom_hline(yintercept = 0) + 
+    ylab("barca goals - real goals") + 
+    theme_economist()
+
+```
+
+### la liga getting intresting or boring
+<p dir="RTL">
+نمودار زیر بیانگر تعداد گلهای زده شده در هر فصل است، همانطور که از تصویر قابل برداشت است، لالیگا طی سالها جذابتر دنبال میشود.
+</p>
+
+
+```{r goals-over-years}
+# goals in years
+
+spain %>% group_by(Season) %>% 
+    summarise(goals = sum(hgoal) + sum(vgoal)) %>% 
+    hchart(type = "line", hcaes(x = Season, y = goals )) %>% 
+    hc_add_theme(hc_theme_sandsignika())
+```
+
+### can atletico madrid be another power in madrid ?
+
+<p dir="RTL">
+بر اساس نمودار زیر، تعداد بردهای اتلتیکو مادرید طی سالها بیشتر شده است، میتوان سال ۲۰۰۵ تا حال را زمان مدعی بودن اتلتیکو در مادرید دانست.
+</p>
+
+
+```{r atletico}
+# Atletico Madrid to the rescue
+spain %>% group_by(Season) %>% 
+    filter((home == "Atletico Madrid" & hgoal > vgoal) | ( visitor == "Atletico Madrid" & vgoal > hgoal ) ) %>% 
+    summarise(atlet_wins = n() / ( spain %>% filter(Season == Season) %>% .$home %>% unique %>% length )) %>% 
+    ggplot() +
+    geom_smooth(aes(x = Season, y = atlet_wins))
+``` 
+
+<p dir="RTL">
+از دیتای زیر معلوم است که اتلتیکو حتی در زمان مدعی بودنش سومین تیم خطرناک برای رئال مادرید است، حتی او این جایگاه را با ویارئال به اشتراک میگذارد. 
+</p>
+
+```{r madrid-derby}
+games_by_team %>% 
+    filter(Season >= 2005) %>% 
+    filter(team == "Real Madrid") %>% 
+    group_by(opponent) %>% 
+    summarise(real_kills = sum(opponent_goal >= team_goal)) %>% 
+    arrange(desc(real_kills)) %>% 
+    head(5)
+```
+

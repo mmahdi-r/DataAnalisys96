@@ -1,0 +1,262 @@
+---
+title: "Association rules"
+subtitle: "Movie recommender systems"
+author: "محمد مهدی رفیعی"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/rs_cover.jpg"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با استفاده از داده نظرهای فیلم به سوالات زیر پاسخ دهید.
+</p>
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(arules)
+library(arulesViz)
+library(colorspace)
+library(ggcorrplot)
+library(tm)
+library(wordcloud2)
+library(tidytext)
+
+movie = read_delim('data/movies.dat',delim = "::" ,col_names = c("MovieID",NA,"Title",NA,"Genres")) %>% 
+    select(MovieID, Title, Genres) %>% 
+    mutate(year = as.numeric(str_extract(Title, "(?<=\\()([:digit:]{4})(?=\\))")))
+
+tag = read_delim('data/tags.dat',delim = "::" ,col_names = c("UserID",NA,"MovieID",NA,"Tag",NA,"Timestamp")) %>% 
+    select(UserID, MovieID, Tag, Timestamp)
+
+rating = read_delim('data/ratings.dat',delim="::",col_names=c("UserID",NA,"MovieID",NA,"Rating",NA,"Timestamp")) %>% 
+    select(UserID, MovieID, Rating, Timestamp)
+
+movie_genre <- separate_rows(movie, Genres, sep = "\\|") %>% 
+    filter(Genres != "(no genres listed)")
+```
+
+
+***
+
+<p dir="RTL">
+۱. آماره های زیر را بیابید.
+الف. محبوب ترین فیلم کدام است؟
+ب. بیشترین نظرات درباره چه فیلمی داده شده است؟
+پ. منفورترین فیلم کدام است؟
+ت. تعداد فیلم های ساخته شده در هر سال
+ث. در هر سالی مردم به چه ژانری علاقه مند بوده اند.
+</p>
+
+```{r}
+rating %>% 
+    group_by(MovieID) %>% 
+    summarise(mean_rating = mean(Rating), cnt_rating = n()) %>% 
+    filter(cnt_rating > 500) %>% 
+    arrange(desc(mean_rating)) %>% 
+    head(1) %>% 
+    .$MovieID -> id
+movie %>% filter(MovieID == id) %>% .$Title
+```
+```{r}
+rating %>% 
+    group_by(MovieID) %>% 
+    summarise(cnt_rating = n()) %>% 
+    arrange(desc(cnt_rating)) %>% 
+    head(1) %>% 
+    .$MovieID -> id
+movie %>% filter(MovieID == id) %>% .$Title
+```
+```{r}
+rating %>% 
+    group_by(MovieID) %>% 
+    summarise(mean_rating = mean(Rating), cnt_rating = n()) %>% 
+    filter(cnt_rating > 500) %>% 
+    arrange(mean_rating) %>% 
+    head(1) %>% 
+    .$MovieID -> id
+movie %>% filter(MovieID == id) %>% .$Title
+
+```
+```{r warning=FALSE}
+movie %>% 
+    group_by(year) %>% 
+    summarise(cnt = n()) %>% 
+    ggplot() + geom_line(aes(x = year, y = cnt))
+```
+```{r}
+movie_genre %>% 
+    group_by(Genres) %>%
+    summarise(popularity = n()) %>% 
+    arrange(desc(popularity)) %>% 
+    head(19) %>% 
+    .$Genres -> genres
+movie_genre %>% 
+    filter(Genres %in% genres) %>% 
+    group_by(year, Genres) %>% 
+    summarise(cnt = n()) %>% 
+    ggplot() + geom_line(aes(x = year, y = cnt, color = Genres))
+```
+
+
+***
+
+<p dir="RTL">
+۲. ژانر فیلم ها را استخراج نمایید.  سپس آماره های زیر را استخراج نمایید.
+الف. نمودار ستونی تعداد فیلم های هر ژانر
+ب. نمودار همبستگی ژانرها
+پ. متوسط امتیاز به هر ژانر
+ت. دوران طلایی فیلم سازی 
+</p>
+
+```{r}
+movie_genre %>% 
+    filter(Genres %in% genres) %>% 
+    ggplot() + geom_bar(aes(Genres))
+```
+
+```{r}
+corr <- round(cor(), 1)
+unify <- function(x){return(ifelse(x!=0,x/x,0) )}
+movie_genre %>% 
+    filter(Genres %in% genres) %>% 
+    spread(Genres, MovieID, fill = 0) %>% 
+    select(-Title, -year) %>% 
+    transmute_all(funs(unify)) %>%
+    cor %>% 
+    round(1) %>% 
+    ggcorrplot()
+
+```
+
+```{r}
+rating %>% 
+    group_by(MovieID) %>% 
+    summarise(rating = mean(Rating)) %>% 
+    right_join(
+        movie_genre %>% select(MovieID, Genres) %>% filter(Genres %in% genres)
+    ) %>%
+    group_by(Genres) %>% 
+    summarise(mean = mean(rating)) %>% 
+    na.omit() %>% 
+    arrange(desc(mean)) %>% 
+    hchart(type = 'column', hcaes(x = 'Genres', y = 'mean'))
+```
+
+```{r}
+rating %>% 
+    group_by(MovieID) %>% 
+    summarise(rating = mean(Rating)) %>% 
+    full_join(
+        movie %>% select(MovieID, year)
+    ) %>%
+    group_by(year) %>% 
+    summarise(mean = mean(rating, na.rm = T)) %>% 
+    hchart(type = 'line', hcaes(x = 'year', y = 'mean'))
+```
+
+***
+
+<p dir="RTL">
+۳. نمودار ابر لغات را بر حسب کلمات عنوان فیلم ها رسم نمایید.
+</p>
+
+```{r}
+names = movie %>% filter(MovieID != 51372) %>% .$Title
+names %>%
+    str_replace_all("(?<=\\()([:digit:]{4})(?=\\))", "") %>%
+    str_replace_all("\\W"," ") %>% 
+    str_split(pattern = "\\s") %>% 
+    unlist() %>%
+    str_to_lower() %>% 
+    removeWords(stop_words$word) %>% 
+    table() %>% 
+    as.data.frame(stringsAsFactors = F) %>% 
+    filter(str_length(`.`) > 2) %>%
+    arrange(desc(Freq)) %>% 
+    head(200) %>% 
+    wordcloud2()
+```
+
+
+***
+
+<p dir="RTL">
+۴. با استفاده از قوانین همبستگی یک توصیه گر برای فیلم ها بسازید. شبیه ترین فیلم ها به لیست زیر را پیدا کنید.
+</p>
+
+* Castle in the Sky (1986)
+* Cast Away (2000)
+* No Country for Old Men (2007)
+* Memento (2000)
+
+```{r eval=FALSE}
+rating %>% filter(Rating > 3) %>% select(MovieID, UserID) %>% arrange(UserID) %>% 
+    filter(UserID < 25000) -> items
+
+a_df3 <- data.frame(
+    TID = as.numeric(items$UserID), 
+    item= as.character(items$MovieID)
+)
+
+transactions <- as(split(a_df3[,"item"], a_df3[,"TID"]), "transactions")
+
+apriori(transactions, parameter = list(support = 0.03,
+                                 confidence = 0.2, minlen=5, maxlen=7)) -> rules
+
+watched_movies <- c('Castle in the Sky (Tenkû no shiro Rapyuta) (1986)',
+                    'Cast Away (2000)',
+                    'No Country for Old Men (2007)',
+                    'Memento (2000)')
+
+movie %>% filter(Title %in% watched_movies) %>% .$MovieID -> watched_ids
+
+arules::subset(rules, subset = lhs %in% c(watched_ids))
+
+```
+
+
+***
+
+<p dir="RTL">
+۵. تمرین سخت: در گیت هاب برای خود اکانت درست کنید. همه تمرین های خود را آنجا بارگذاری کنید! و لینک آن را ارسال نمایید.
+</p>
+
+<a href='https://github.com/mmahdi-r/DataAnalisys96.git'>repo</a>
+
+***
+
+<p dir="RTL">
+۶. پنج انتقاد از درس و نحوه تدریس را بیان کنید.
+</p>
+
+***
+
+<p dir="RTL">
+۷. پنج پیشنهاد برای بهتر شدن درس بیان کنید.
+</p>
+
+
+***
+
+<p dir="RTL">
+۸. سه موضوع آماری جدید برای جایگزینی در سرفصل ها پیشنهاد دهید.
+</p>
+
+***
+
+<p dir="RTL"> 
+۹. سه داده جالب برای کار در کلاس پیشنهاد دهید.
+</p>
+
+***
+
+<p dir="RTL"> 
+۱۰. چهار نکته مهمی که در کلاس یاد گرفتید را بیان کنید.
+</p>
+

@@ -1,0 +1,326 @@
+---
+title: "Seventh Week: Generalized Linear Models"
+subtitle: "Murder or suicide"
+author: "student name"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+message: False
+---
+
+<div align="center">
+<img  src="images/giraffe-suicide-fail-cartoon.jpg"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با توجه به سوالات مرگ و میر در آمریکا به سوالات زیر پاسخ دهید.
+</p>
+
+***
+```{r message=FALSE}
+library(tidyverse)
+library(readxl)
+library(reshape2)
+library(car)
+library(Hmisc)
+library(lawstat)
+library(h2o)
+library(boot)
+
+source('cor2.R') # correlation matrix for data frames of many types of columns
+source('unbalanced_functions.R')
+
+death = read.csv('data_glm/murder_suicide.csv')
+
+death %>%
+    mutate(Education = ifelse(EducationReportingFlag == 1, Education2003Revision * 2, Education1989Revision)) %>% 
+    filter(Education < 25) %>% 
+    mutate(AgeInYears = ifelse(AgeType != 1, 0.0, Age)) %>% 
+    filter(AgeInYears < 100) %>% 
+    filter(MannerOfDeath == 2 | MannerOfDeath == 3) %>% 
+    mutate(isSuicide = ifelse(MannerOfDeath == 2, 1, 0)) -> clean_death
+
+clean_death %>% select(Id,
+                       ResidentStatus,
+                       Education, 
+                       Sex, 
+                       AgeInYears, 
+                       MonthOfDeath, 
+                       PlaceOfDeathAndDecedentsStatus,
+                       MaritalStatus,
+                       DayOfWeekOfDeath,
+                       InjuryAtWork,
+                       ActivityCode,
+                       PlaceOfInjury,
+                       Race,
+                       MethodOfDisposition,
+                       isSuicide) -> murder_suicide
+
+```
+
+
+<p dir="RTL">
+۱. از میان متغیرهای داده مرگ و میر یک زیرمجموعه ایی بدون حشو در نظر بگیرید.
+ماتریس همبستگی متغیرهای مختلف را به دست آورده و سپس رسم نمایید. علاوه بر این نمودار پراکنش متغیرهای انتخاب شده را همزمان نسبت به هم رسم نمایید.
+</p>
+
+
+```{r}
+cor_matrix = cor2(murder_suicide)
+cor_matrix %>% melt %>% ggplot + geom_tile(aes(x = Var1, y = Var2, fill = value)) +
+    theme(axis.text.x=element_text(angle=60,hjust=0.5,vjust=0.6))+
+    ggtitle("correlations")
+
+
+scatterplotMatrix(sample_n(murder_suicide,1000) )
+```
+
+
+***
+
+<p dir="RTL">
+۲. اثر هر یک از متغیرهای جنسیت، نژاد،آموزش، سن و نحوه تدفین را بر مرگ یا خودکشی ارزیابی کنید.
+</p>
+
+```{r}
+chisq.test(murder_suicide$Sex, murder_suicide$isSuicide)
+chisq.test(murder_suicide$Race, murder_suicide$isSuicide)
+chisq.test(murder_suicide$Education, murder_suicide$isSuicide)
+chisq.test(murder_suicide$AgeInYears, murder_suicide$isSuicide)
+chisq.test(murder_suicide$MethodOfDisposition, murder_suicide$isSuicide)
+```
+
+
+***
+
+<p dir="RTL">
+۳. با استفاده از مدل رگرسیون لاجستیک یک مدل به داده ها برازش دهید و سپس آن را نقص یابی کنید.
+</p>
+
+```{r}
+formule = isSuicide ~ 
+    ResidentStatus+
+    Education+
+    Sex+
+    AgeInYears+
+    MonthOfDeath+
+    PlaceOfDeathAndDecedentsStatus+
+    MaritalStatus+
+    DayOfWeekOfDeath+
+    InjuryAtWork+
+    ActivityCode+
+    PlaceOfInjury+
+    Race+
+    MethodOfDisposition
+fit <- glm(formule, data = murder_suicide)
+summary(fit)
+
+formule = isSuicide ~ 
+    ResidentStatus+
+    Education+
+    Sex+
+    AgeInYears+
+    MonthOfDeath+
+    PlaceOfDeathAndDecedentsStatus+
+    MaritalStatus+
+    InjuryAtWork+
+    ActivityCode+
+    PlaceOfInjury+
+    MethodOfDisposition
+
+glm.diag.plots(fit, glmdiag = glm.diag(fit))
+
+```
+
+
+***
+
+<p dir="RTL">
+۴. با استفاده از سه نمودار خروجی مدل را نسبت به داده واقعی ارزیابی کنید.
+</p>
+
+```{r}
+murder_suicide = murder_suicide %>% mutate(pred = fitted(fit)) 
+
+ggplot (murder_suicide ,aes(x = AgeInYears, y = pred, col = isSuicide) )+
+    geom_jitter(alpha = 0.3) +
+    scale_color_continuous(low = 'red', high = 'blue')
+
+ggplot (murder_suicide ,aes(x = Education, y = pred, col = isSuicide) )+
+    geom_jitter(alpha = 0.3) +
+    scale_color_continuous(low = 'red', high = 'blue')
+
+ggplot(murder_suicide, aes( pred, color = as.factor(isSuicide))) + 
+    geom_density( size = 1 )
+```
+
+
+***
+
+<p dir="RTL">
+۵. ابتدا ۲۰ درصد داده را به صورت تصادفی به عنوان تست در نظر بگیرید. مدل را با استفاده از ۸۰ درصد باقی مانده برازش دهید. با استفاده از پارامتر قطع ۰.۵ نتایج را برای داده تست پیش بینی کنید. سپس کمیت های زیر را محاسبه کنید.
+</p>
+
+* P: positive samples
+* N: negative samples
+* TP: true positive TP (eqv. with hit)
+* TN: true negative (eqv. with correct rejection)
+* FP: false positive (eqv. with false alarm, Type I error)
+* FN: false negative (eqv. with miss, Type II error)
+* Accuracy (ACC) ACC = (TP+TN)/(P+T)
+* False positive rate (FPR): 1- TN/N
+* True positive rate (TPR): TP/P
+
+<p dir="RTL">
+مشابه آنچه در کلاس گفته شد نمایشی از  چهار کمیت 
+TN, TP,FP,FN
+به همراه داده ها رسم نمایید.
+</p>
+
+```{r}
+index = sample(x= 1:nrow(murder_suicide), size = 0.8*nrow(murder_suicide),replace = F)
+train = murder_suicide[index,] 
+test =  murder_suicide[-index,]
+model_glm = glm(formule, data = train)
+# prediction
+train$prediction = predict( model_glm, newdata = train, type = "response" )
+test$prediction  = predict( model_glm, newdata = test , type = "response" )
+
+cm_info = ConfusionMatrixInfo( data = test, predict = "prediction", 
+                               actual = "isSuicide", cutoff = .5 )
+cm_info$plot
+
+test %>% select(prediction, isSuicide) %>% mutate(pred = ifelse(prediction < .5, 0, 1)) %>% 
+    select(pred, isSuicide) %>% group_by(pred, isSuicide) %>% summarise(n = n()) -> measures
+
+measures %>% filter(pred == 1) %>% .$n %>% sum -> P
+measures %>% filter(pred == 0) %>% .$n %>% sum -> N
+measures %>% filter(pred == 1 & isSuicide == 1) %>% .$n %>% sum -> TP
+measures %>% filter(pred == 1 & isSuicide == 0) %>% .$n %>% sum -> FP
+measures %>% filter(pred == 0 & isSuicide == 0) %>% .$n %>% sum -> TN
+measures %>% filter(pred == 0 & isSuicide == 1) %>% .$n %>% sum -> FN
+ACC = (TP + TN) / (P + N)
+FPR = 1 - (TN / N)
+TPR = TP / P
+
+P
+N
+TP
+FP
+TN
+FN
+ACC
+FPR
+TPR
+```
+
+
+***
+
+<p dir="RTL">
+۶. نمودار صحت مدل (accuracy) را بر حسب مقادیر مختلف قطع برای داده تست رسم نمایید. کدام پارامتر قطع بالاترین صحت را در پیش بینی داراست؟
+</p>
+
+```{r}
+cutoffs = c()
+acc_test = c()
+acc_train = c()
+for (cutoff in seq(.4, .8, .01)) {
+    test %>% select(prediction, isSuicide) %>% mutate(pred = ifelse(prediction < cutoff, 0, 1)) %>% 
+        select(pred, isSuicide) %>% group_by(pred, isSuicide) %>% summarise(n = n()) -> measures
+    
+    measures %>% filter(pred == 1) %>% .$n %>% sum -> P
+    measures %>% filter(pred == 0) %>% .$n %>% sum -> N
+    measures %>% filter(pred == 1 & isSuicide == 1) %>% .$n %>% sum -> TP
+    measures %>% filter(pred == 1 & isSuicide == 0) %>% .$n %>% sum -> FP
+    measures %>% filter(pred == 0 & isSuicide == 0) %>% .$n %>% sum -> TN
+    measures %>% filter(pred == 0 & isSuicide == 1) %>% .$n %>% sum -> FN
+    ACC_test = (TP + TN) / (P + N)
+    
+    train %>% select(prediction, isSuicide) %>% mutate(pred = ifelse(prediction < cutoff, 0, 1)) %>% 
+        select(pred, isSuicide) %>% group_by(pred, isSuicide) %>% summarise(n = n()) -> measures
+    
+    measures %>% filter(pred == 1) %>% .$n %>% sum -> P
+    measures %>% filter(pred == 0) %>% .$n %>% sum -> N
+    measures %>% filter(pred == 1 & isSuicide == 1) %>% .$n %>% sum -> TP
+    measures %>% filter(pred == 1 & isSuicide == 0) %>% .$n %>% sum -> FP
+    measures %>% filter(pred == 0 & isSuicide == 0) %>% .$n %>% sum -> TN
+    measures %>% filter(pred == 0 & isSuicide == 1) %>% .$n %>% sum -> FN
+    ACC_train = (TP + TN) / (P + N)
+    
+    cutoffs = c(cutoffs, cutoff)
+    acc_test = c(acc_test, ACC_test)
+    acc_train = c(acc_train, ACC_train)
+    
+}
+
+data.frame(cutoff = cutoffs,
+           Accuracy = c(acc_test, acc_train),
+           type = rep(c('Test', "Train"), each = length(acc_test)) ) %>% 
+    ggplot(aes(x = cutoff, y = Accuracy, col = type))+
+    geom_line()+ 
+    geom_point() 
+```
+
+
+***
+
+<p dir="RTL">
+۷. نمودار 
+ROC
+ را برای داده های قسمت قبل رسم نمایید. همچنین نقطه مربوط به بهترین پارامتر قطع را مشخص نمایید.
+</p>
+
+```{r}
+cost_fp = 100;cost_fn = 200
+roc_info = ROCInfo( data = cm_info$data, predict = "predict", 
+                    actual = "actual", cost.fp = cost_fp, cost.fn = cost_fn )
+grid.draw(roc_info$plot)
+```
+
+
+***
+
+<p dir="RTL">
+۸. با قرار دادن کمیت 
+nfolds = 5
+و با استفاده از 
+H20
+مدل مساله را بسازید و نتیجه حاصل را ارزیابی کنید.
+</p>
+
+```{r}
+h2o.init()
+
+h_data = as.h2o(murder_suicide)
+
+c('ResidentStatus',
+    'Education',
+    'Sex',
+    'AgeInYears',
+    'MonthOfDeath',
+    'PlaceOfDeathAndDecedentsStatus',
+    'MaritalStatus',
+    'DayOfWeekOfDeath',
+    'InjuryAtWork',
+    'ActivityCode',
+    'PlaceOfInjury',
+    'Race',
+    'MethodOfDisposition') -> x
+
+chglm = h2o.glm(y = "isSuicide", x= x, training_frame = h_data ,nfolds = 5)
+chglm
+```
+
+***
+
+<p dir="RTL"> 
+۹. آیا ما میتوانیم سرویسی به قضات ارایه کنیم تا با استفاده از اطلاعات مرگ بتوانند موارد مشکوک به قتل را از خودکشی تفکیک دهند؟
+</p>
+
+<p dir = "RTL">
+دقت این رگرسیون به اندازه کافی خوب نیست ولی میتوان رگرسیونی بهتر ارائه کرد و به عنوان سرویس استفاده کرد. اما بهتر است به جای  استفاده از این سرویس به عنوان جعبه سیاه عاملهای موثر بر خودکشی شناسایی شوند و اینطوری دید بهتر به قاضی داده میشود و روند تطابق اطلاعات شخص و افرادی که به طور معمول خودکشی میکنند منطقیتر به نظر میرسد.
+</p>
+

@@ -1,0 +1,487 @@
+---
+title: "Fourth Week: Hypothesis Testing"
+subtitle: "TIMSS Analysis"
+author: "student name"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/math.jpg"  align = 'center'>
+</div>
+
+<h1 dir="RTL"> 
+تمرین سری چهارم: چقدر ریاضی بلدیم و چرا؟
+</h1>
+
+<p dir="RTL"> لطفا مقاله زیر را مطالعه بفرمایید. </p>
+<p dir="RTL">
+[چرایی رتبه ضعیف ایران در آزمون تیمز](https://goo.gl/gX8DZc)
+</p>
+
+> <p dir="RTL"> 
+با استفاده از داده های ارزیابی تیمز ۲۰۱۵ ادعاهای زیر را مورد ارزیابی قراردهید.
+برای هر سوال علاوه بر استدلال آماری که در غالب آزمون فرض تعریف می شود از تصویرسازی مناسب باهر دو ابزار
+ggplot2
+و
+highcharter
+استفاده نمایید.
+به دلخواه به هفت گزاره از موارد زیر پاسخ دهید.
+</p>
+
+```{r set-up, message=F}
+library(tidyverse)
+library(highcharter)
+
+teacher = read_rds("material/data/btm.rds") # Teacher background
+stt = read_rds("material/data/bst.rds") # student-teacher linkage
+school = read_rds("material/data/bcg.rds") # school background
+student = read_rds("material/data/bsg.rds") # student background
+stresult = read_rds("material/data/bsa.rds") # student result
+country = read_rds("material/data/bsr.rds") # within-country
+```
+
+
+
+***
+
+<p dir="RTL">
+۱. میران رضایت معلمان در پیشرفت تحصیلی دانش آموزان موثر است.
+</p>
+
+```{r}
+stt %>% select(idcntry, idschool,  idteach, idgrade, idlink, bsmmat01:bsmmat05) %>% distinct -> grades
+
+grades %>% 
+    mutate(score = rowMeans(grades[,6:10])) -> grades
+
+teacher %>% select(idcntry, idschool, idteach, idgrade, idlink, btbg10b) %>% distinct -> teachers
+
+full_join(grades, teachers, by = c("idcntry", "idteach", "idgrade", "idlink" ,"idschool")) %>% 
+    select(satisfaction = btbg10b, score) %>% 
+    filter(!is.na(satisfaction)) -> res
+
+aov(formula = satisfaction~score , data = res) %>% summary.aov()
+
+ggplot(data = res) +
+    geom_tile(aes(satisfaction, score), stat = 'bin2d')+
+    scale_x_continuous(breaks = c(1,4), labels = c("1" = "most satisfied", "4" = "least satisfied"))
+
+res %>% group_by(satisfaction) %>% summarise(mean = mean(score)) -> summed_data
+
+hchart(summed_data, type = "column", hcaes(x = satisfaction, y = mean))    
+
+hcboxplot(x = res$score, var = res$satisfaction) %>% 
+    hc_chart(type = "column")
+```
+
+
+***
+
+<p dir="RTL">
+۲. والدینی که تحصیلات بیشتری دارند دارای فرزندان موفق تری می باشند.
+</p>
+
+```{r}
+student %>% 
+    select(idcntry, idstud, bsdgedup) %>%
+    select(idcntry, idstud, pared = bsdgedup) %>% 
+    filter(pared!=6)-> st
+
+stresult %>%
+    select(idcntry, idstud, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,3:7])) %>%
+    select(idcntry, idstud, score) -> res
+
+full_join(st, res, by=c("idcntry", "idstud")) -> data
+
+aov(formula = score ~ pared, data = data) %>% summary.aov
+
+data %>% group_by(pared) %>% summarise(mean = mean(score)) -> summed_data
+
+ggplot(data) +
+    geom_jitter(aes(x = pared, y = score),  na.rm = T, alpha = 0.05)+
+    scale_x_continuous(breaks = c(1,5) , labels = c('1' = "high ed", '5' = "low ed"))+
+    ggtitle(label = "world: score by wealth") +
+    geom_line(data = summed_data , mapping = aes(x = pared, y = mean), size = 1, color = "red") +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed")
+```
+
+
+***
+
+<p dir="RTL">
+۳. امکانات رفاهی در خانه موجب پیشرفت تحصیلی می گردد.
+</p>
+
+```{r}
+student %>% 
+    select(idcntry, idstud, bsbg06a:bsbg06k) %>%
+    mutate(wealth = rowSums(.[3:13])) %>% 
+    select(idcntry, idstud, wealth) -> st
+
+stresult %>%
+    select(idcntry, idstud, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,3:7])) %>%
+    select(idcntry, idstud, score) -> res
+
+full_join(st, res, by=c("idcntry", "idstud")) -> data
+
+aov(formula = score ~ wealth, data = data) %>% summary.aov
+
+data %>% group_by(wealth) %>% summarise(mean = mean(score))->summed_data
+
+ggplot(data) +
+    geom_jitter(aes(x = wealth, y = score),  na.rm = T, alpha = 0.05)+
+    scale_x_continuous(breaks = c(11,22) , labels = c('11' = "wealthy", '22' = "poor"))+
+    ggtitle(label = "world: score by wealth")+
+    geom_line(data = summed_data , mapping = aes(x = wealth, y = mean), size = 1, color = "red") +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed")
+```
+
+
+***
+
+<p dir="RTL">
+۴. محیط آرام مدرسه نقش مهمی در پیشرفت تحصیلی دارد.
+</p>
+
+```{r}
+student %>% 
+    select(idcntry, idstud, bsbg16a:bsbg16i) %>%
+    mutate(safety = rowSums(.[3:11])) %>% 
+    select(idcntry, idstud, safety) -> st
+
+stresult %>%
+    select(idcntry, idstud, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,3:7])) %>%
+    select(idcntry, idstud, score) -> res
+
+full_join(st, res, by=c("idcntry", "idstud")) -> data
+
+aov(formula = score ~ safety, data = data) %>% summary.aov
+
+data %>% group_by(safety) %>% summarise(mean = mean(score))-> summed_data
+
+ggplot(data) +
+    geom_jitter(aes(x = safety, y = score),  na.rm = T, alpha = 0.05)+
+    scale_x_continuous(breaks = c(9, 36) , labels = c('9' = "unsafe", '36' = "safe"))+
+    ggtitle(label = "world: score by safety")+
+    geom_line(data = summed_data , mapping = aes(x = safety, y = mean), size = 1, color = "red") +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed")
+```
+
+
+***
+
+<p dir="RTL">
+۵. معلمان با تحصیلات  بالاتر یا تجربه بیشتر دانش آموزان موفق تری تربیت می کنند.
+</p>
+
+```{r}
+stt %>% 
+    filter(idsubj == 1) %>% 
+    select(idcntry, idstud, idteach, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,4:8])) %>% 
+    select(idcntry, idstud, idteach, score)-> st
+
+teacher %>% 
+    select(idcntry, idteach, age = btbg03) %>% 
+    full_join(st, by = c("idcntry", "idteach")) -> res
+
+res %>% group_by(age) %>% summarise(mean = mean(score)) -> summed_data
+
+aov(formula = score ~ age, data = res) %>% summary.aov
+
+t.test(res %>% filter(age == 2) %>% .$score, res %>% filter(age == 4) %>% .$score)
+
+ggplot(res) +
+    geom_jitter(aes(x = age, y = score), alpha = 0.05, na.rm = T) +
+    geom_line(data = summed_data , mapping = aes(x = age, y = mean), size = 1, color = "red", na.rm = T) +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed") +
+    scale_x_continuous(breaks = c(1:6), labels = c("1" = "under 25",
+                                                 "2" = "25-29",
+                                                 "3" = "30-39",
+                                                 "4" = "40-49",
+                                                 "5" = "50-59",
+                                                 "6" = "60 or more"))
+```
+
+
+***
+
+<p dir="RTL"> 
+۶. پسران در کاربرد هندسه قوی تر هستند.
+</p>
+
+```{r}
+
+stresult %>% select(itsex, bsmgeo01:bsmgeo05) %>%
+    mutate(score = rowMeans(.[,2:6]) ) %>% 
+    select(itsex, score) %>% 
+    filter(!is.na(itsex)) %>% 
+    mutate(gender = ifelse(itsex==1,"Girl","Boy")) %>% 
+    select(score, gender)-> scores_geometry
+
+t.test(x = (scores_geometry %>% filter(gender == "Girl") %>% .$score) , (y = scores_geometry %>% filter(gender == "Boy") %>% .$score))
+
+
+hcboxplot(x = scores_geometry$score, var = scores_geometry$gender) %>% 
+    hc_chart(type = "column") %>% 
+    hc_yAxis(title = list(text = "geometry score"))
+
+ggplot(scores_geometry)+
+    geom_bar(aes(score), stat = "bin", bins = 40, color = "blue", fill = "lightblue") +
+    facet_grid(~gender) +
+    theme_light()
+
+```
+
+
+***
+
+<p dir="RTL"> 
+۷. تغذیه دانش آموزان نقش اساسی در یادگیری آنها دارد. 
+</p>
+
+```{r}
+student %>% select(idcntry:idgrade, bsbg12) -> st
+
+stresult %>% select(idcntry:idstud, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,6:10])) -> res
+
+full_join(st, res, by=c("idcntry","idbook","idschool","idclass", "idstud")) %>% 
+    select(breakfast = bsbg12, score) %>% 
+    filter(!is.na(breakfast))-> data
+
+
+aov(formula = score ~ breakfast, data = data) %>% summary.aov
+
+hcboxplot(x = data$score, var = data$breakfast)
+
+data %>% group_by(breakfast) %>% summarise(mean = mean(score)) -> summed_data
+
+ggplot() +
+    geom_jitter(data = data, mapping = aes(x = breakfast, y = score),  na.rm = T, alpha = 0.05) +
+    scale_x_continuous(breaks = c(1, 4) , labels = c('1' = "eats breakfast", '4' = "doesn't eat breakfast")) +
+    geom_line(data = summed_data , mapping = aes(x = breakfast, y = mean), size = 1, color = "red") +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed")
+```
+
+
+***
+
+<p dir="RTL"> 
+۸. مدارس با امکانات بیشتر دارای عملکرد بهتری می باشند.
+</p>
+
+
+***
+
+<p dir="RTL"> 
+۹. علت افت تحصیلی عدم مشارکت در کلاس است.
+</p>
+
+```{r}
+student %>% 
+    select(idcntry, idstud, bsbg11) %>%
+    select(idcntry, idstud, association = bsbg11) -> st
+
+stresult %>%
+    select(idcntry, idstud, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,3:7])) %>%
+    select(idcntry, idstud, score) -> res
+
+full_join(st, res, by=c("idcntry", "idstud")) -> data
+
+aov(formula = score ~ association, data = data) %>% summary.aov
+
+data %>% group_by(association) %>% summarise(mean = mean(score)) -> summed_data
+
+ggplot(data) +
+    geom_jitter(aes(x = association, y = score),  na.rm = T, alpha = 0.05) +
+    geom_line(data = summed_data , mapping = aes(x = association, y = mean), size = 1, color = "red") +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed")
+
+```
+
+
+***
+
+<p dir="RTL"> 
+۱۰. دانش آموزان ایرانی در استدلال قوی تر از کاربرد هستند.
+</p>
+
+```{r}
+stresult %>% 
+    filter(idcntry == 364) %>% 
+    select(bsmrea01:bsmrea05, bsmapp01:bsmapp05) %>% 
+    mutate(
+        reasoning = rowMeans(.[,1:5]),
+        applying = rowMeans(.[,6:10])) %>%
+    select(reasoning, applying) -> iran
+
+
+stresult %>% 
+    select(bsmrea01:bsmrea05, bsmapp01:bsmapp05) %>% 
+    mutate(
+        reasoning = rowMeans(.[,1:5]),
+        applying = rowMeans(.[,6:10])) %>%
+    select(reasoning, applying) -> world
+
+t.test(world$reasoning, world$applying)
+
+t.test(iran$reasoning, iran$applying)
+
+iran %>% gather -> boxdata
+
+hcboxplot(x = boxdata$value, var = boxdata$key) %>% 
+    hc_add_theme(hc_theme_darkunica()) %>%
+    hc_title(text = "iranian scores") 
+
+world %>% gather -> boxdata
+
+hcboxplot(x = boxdata$value, var = boxdata$key) %>% 
+    hc_add_theme(hc_theme_darkunica()) %>%
+    hc_title(text = "world scores") 
+```
+
+
+***
+
+<p dir="RTL">
+سه گزاره جالب کشف کنید و ادعای خود را ثابت نمایید.
+</p>
+
+## ارتباط تحصیلات مدیر و موفقیت دانشآموزان
+
+```{r}
+
+school %>% 
+    select(idcntry, idschool, principal_ed = bcbg21) %>% 
+    filter(!is.na(principal_ed))-> schl
+
+stresult %>% 
+    select(idcntry, idschool, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[3:7])) %>% 
+    group_by(idcntry, idschool) %>% 
+    summarise(school_score = mean(score)) -> st
+
+
+full_join(st, schl, by= c("idcntry", "idschool")) -> data
+
+data %>% 
+    group_by(principal_ed) %>% 
+    summarise(mean = mean(school_score)) %>% 
+    filter(!is.na(principal_ed))-> summed_data
+
+data %>% ggplot() +
+    geom_jitter(aes(x = principal_ed, y = school_score), na.rm = T) +
+    geom_line(data = summed_data, mapping = aes(x = principal_ed, y = mean), size = 1, color = "red") +
+    scale_x_continuous(name = "principal education", 
+                       labels = c("1" = "diploma", "2" = "bachelor", "3" = "master", "4" = "doctor"),
+                       breaks = c(1:4))
+
+t.test(data %>% filter(principal_ed == 2) %>% .$school_score, data %>% filter(principal_ed == 3) %>% .$school_score)
+```
+
+<p dir = "RTL">
+ارتباط میان تحصیلات مدیر مدرسه و موفقیت دانشآموزان واضح است،در مقطع دکترا توجیه میتواند به این شکل باشد که مدیر از شغلش راضی نیست یا این مقادیر به علت کم بودن دیتا قابل استناد نیستند.
+</p>
+
+***
+
+#تاثیر جنسیت معلم و دانشآموز بر نمره دانشآموز
+
+```{r}
+
+stt %>% 
+    filter(idsubj == 1) %>% 
+    select(idcntry, idstud, idteach, bsmmat01:bsmmat05)  %>% 
+    mutate(score = rowMeans(.[,4:8])) %>%
+    select(idcntry:idteach, score)-> st
+
+student %>% 
+    select(idcntry, idstud, student_gender = itsex) %>% 
+    full_join(st, by = c("idcntry", "idstud")) %>% 
+    filter(!is.na(student_gender)) -> st
+
+st %>% 
+    group_by(idcntry, idteach, student_gender) %>% 
+    summarise(score = mean(score)) -> st
+
+
+teacher %>% 
+    select(idcntry, idteach, teacher_gender = btbg02) %>% 
+    filter(!is.na(teacher_gender)) -> tea
+
+full_join(st, tea, by = c("idcntry", "idteach")) %>% 
+    filter(!is.na(teacher_gender), !is.na(student_gender)) -> data
+
+data %>% 
+    ungroup(idcntry, idteach) %>% 
+    mutate(t_gender = ifelse(teacher_gender == 1 , "female teacher", "male teacher")) %>% 
+    mutate(s_gender = ifelse(student_gender == 1 , "female student", "male student")) %>% 
+    select(t_gender, s_gender, score, teacher_gender, student_gender) -> data
+
+ggplot(data) +
+    geom_density(aes(score)) +
+    facet_grid(t_gender~s_gender)
+
+
+data %>% 
+    group_by(t_gender,s_gender) %>%
+    summarise(score = mean(score, na.rm = T)) %>% 
+    ggplot() +
+    geom_tile(aes(x = t_gender, y = s_gender, fill = score)) +
+    scale_fill_gradient(low = "yellow", high = "red") +
+    xlab("teacher gender") +
+    ylab("student gender")
+
+
+t.test(data %>% filter(teacher_gender != student_gender) %>% .$score,
+       data %>% filter(teacher_gender == student_gender) %>% .$score)
+```
+
+<p dir="RTL">
+واضح است که تفاوت جنسیت معلم و شاگرد تاثیر واضح و معنادار مثبتی بر راندمان کلاس دارد.
+همچنین واضحا معلمان خانم به مراتب بهتر از معلمان آقا تدریس میکنند.
+</p>
+
+***
+#تاثیر فشار والدین بر معلم بر پیشرفت دانشآموزان
+
+```{r}
+#teacher pressure from parents effect on students
+
+stt %>% 
+    filter(idsubj == 1) %>% 
+    select(idcntry, idstud, idteach, bsmmat01:bsmmat05) %>% 
+    mutate(score = rowMeans(.[,4:8])) %>% 
+    select(idcntry, idstud, idteach, score)-> st
+
+teacher %>% 
+    select(idcntry, idteach, parent_pressure = btbg11f) %>% 
+    full_join(st, by = c("idcntry", "idteach")) -> res
+
+res %>% group_by(parent_pressure) %>% summarise(mean = mean(score)) %>% filter(!is.na(parent_pressure))-> summed_data
+
+aov(formula = score ~ parent_pressure, data = res) %>% summary.aov
+
+ggplot(res) +
+    geom_jitter(aes(x = parent_pressure, y = score), alpha = 0.05, na.rm = T) +
+    geom_line(data = summed_data , mapping = aes(x = parent_pressure, y = mean), size = 1, color = "red", na.rm = T) +
+    geom_hline(yintercept = max(summed_data$mean), size = 0.5 , color = "green", linetype = "dashed") +
+    scale_x_continuous(breaks = c(1,4), labels = c("1" = "lot of pressure",
+                                                   "4" = "note much pressure"))
+
+t.test(res %>% filter(parent_pressure == 2) %>% .$score, res %>% filter(parent_pressure == 4) %>% .$score)
+```
+
+<p dir="RTL">
+همانطور که واضح است فشار متوسط بر معلم تاثیر مثبت دارد. از طرفی ممکن است برداشت شود که والدینی که بر معلم فشار بیاورد بیشتر به فکر رشد درسی فرزندش دارد و در نتیجه دانشآموزان آن معلم وضعیت تحصیلی خوبی خواهند داشت. اما ستون آخر نقضیست بر این فرضیه. چرا که فشار بیش از حد عملکرد معلم را پایین آورده است.
+</p>
+

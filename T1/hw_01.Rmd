@@ -1,0 +1,392 @@
+---
+title: "first week: Introduction to R and Rstudio"
+author: "<۹۵۱۰۰۶۱۵> محمد مهدی رفیعی"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/Rman.jpeg"  align = 'center'>
+</div>
+
+
+<h1 dir="RTL"> 
+تمرین سری اول: چند مساله
+</h1>
+
+<p dir="RTL"> 
+به سوال های زیر را از طریق نوشتن یک کد پاسخ دهید.
+</p>
+
+***
+
+<h2 dir="RTL">
+ماتریس دوستانه
+</h2>
+
+<p dir="RTL">
+یک ماتریس
+$(n,n)$
+که شامل اعداد 
+$1,2,...,n^2$
+است. دوستانه نامیده میشود اگر مجموع سطرها با مجموع ستون های آن برابر شوند. مثال هایی از ماتریس های دوستانه از بعد ۴و۵و۶ ارایه دهید. 
+</p>
+
+<h3 dir="RTL">
+پاسخ
+</h3>
+
+<h4 dir="RTL">
+جواب برای چهار
+</h4>
+
+<p dir="RTL">
+میتوانیم جدول را به ترتیب پر کنیم و در هر حرکت صدق شرایط جدول نیمه پر شده را چک کنیم،در صورت عدم معتبر جدول، به گام قبل رفته و عدد دیگری را امتحان میکنیم.
+</p>
+#### backtracking
+```{r magic_square4}
+magic_square <- function(n){
+  
+  mat = matrix(data = rep(0, times = n*n), ncol = n, nrow = n)
+  n_sum = sum(1:n^2) / n
+  can_use = rep(T, n^2)
+  
+  check <- function(i, j){
+    if(i == n & sum(mat[, j]) != n_sum )
+      return(F)
+    if(j == n & sum(mat[i, ]) != n_sum )
+      return(F)
+    return (sum(mat[i,]) <= n_sum & sum(mat[, j]) <= n_sum)
+  }
+  
+  next_position <- function(i, j){
+    if(j == n)
+      return(c(i+1,1)) 
+    return(c(i,j+1))
+  }
+  
+  solve_magic <- function(i, j){
+    if(i == n+1)
+      return(T)
+    
+    search_space = c(1:n^2)
+    if( i+j %%  2 == 1 )
+      search_space = c(n^2:1)
+    
+    for(num in search_space){
+      
+      if(can_use[num]){
+        can_use[num] <<- F
+        mat[i, j] <<- num
+        if(check(i, j)){
+          nxt = next_position(i,j)
+          if(solve_magic(nxt[1], nxt[2]))
+            return(T)
+        }
+        mat[i, j] <<- 0
+        can_use[num] <<- T
+      }
+    }
+    return(F)
+  }
+  
+  solve_magic(1, 1)
+  return(mat)
+
+}
+
+magic_square(3)
+magic_square(4)
+
+```
+<p dir="RTL">
+راه حل فوق برای بعدهای بالاتر بهینه نیست و زمان زیادی برای محاسبه نیاز دارد.
+</p>
+<h4 dir="RTL">
+پاسخ برای بعدهای بالاتر
+</h4>
+<p dir="RTL">
+از پکیج مربوطه(!) استفاده میکنیم.
+</p>
+
+```{r magic_all}
+library(magic)
+magic(4)
+magic(5)
+magic(6)
+```
+
+
+***
+
+<h2 dir="RTL">
+جایشگت  عجیب
+</h2>
+
+<p dir="RTL">
+جایگشت هایی از اعداد ۱ تا ۱۳ را پیدا کنید که در شرایط زیر صدق کنند:
+</p>
+
+$$ a = (a_1, a_2,..., a_{13})$$
+$$\frac{a_1}{a_2+a_3} = \frac{a_2+a_3}{a_3+a_4+a_5}<1$$
+$$\frac{a_6}{a_6+a_7}= \frac{a_6+a_7}{a_7+a_8+a_9} = \frac{a_7+a_8+a_9}{a_5+a_9+a_{10}} <1$$
+
+$$\frac{a_{11}+a_{12}}{a_{12}+a_{13}}=\frac{a_{12}+a_{13}}{a_{13}+a_{10}}<1$$
+
+<h3 dir="RTL">
+پاسخ
+</h3>
+
+<p dir="RTL">
+ابتدا تمام حالتهای پنج عنصر اول را مییابیم، اگر در شرط اول صدق میکردند بر اساس عناصر باقیمانده تمام حالتهای پنج عنصر دوم را مییابیم، اگر در ده عنصر اول در شرط دوم صدق میکردند سپس تمامی حالتهای سه عنصر آخر را چک میکنیم که سیزده عنصر انتخابی در شرط سوم نیز صدق کنند.
+</p>
+
+```{r answer2}
+library(gtools)
+
+check1 <- function(a){
+  return ( ( a[1] / (a[2] + a[3]) == (a[2]+a[3]) / (a[3]+a[4]+a[5]) ) &
+             (a[1] / (a[2] + a[3]) < 1) )
+}
+
+check2 <- function(a){
+  return ( a[6] / (a[6] + a[7]) == (a[6]+a[7]) / (a[7] + a[8] + a[9]) &
+             a[6] / (a[6] + a[7]) == (a[7] + a[8] + a[9]) / (a[5] + a[9] + a[10]) &
+             a[6] / (a[6] + a[7]) < 1)
+}
+
+check3 <- function(a){
+  return ( (a[11]+ a[12]) / (a[12] + a[13]) == (a[12]+a[13]) / (a[13] + a[10]) &
+             (a[11]+ a[12]) / (a[12] + a[13]) < 1  )
+}
+
+first_candidates <- permutations(13, 5)
+
+all <- c(1:13)
+
+for(i in 1:dim(first_candidates)[1]){
+  
+  candidate1 <- first_candidates[i, ]
+  
+  if( check1(candidate1) == F ){
+    next
+  }
+  others <- all[ ! all %in% candidate1 ]
+  
+  second_candidates <- permutations(8, 5, others)
+  
+  for(j in 1:dim(second_candidates)[1]){
+    candidate2 <- second_candidates[j, ]
+    
+    if(!check2(c(candidate1, candidate2)))
+      next
+    
+    others <- all [ ! all %in% candidate1 & ! all %in% candidate2]
+    
+    third_candidate <- permutations(3, 3, others)
+    
+    for(k in 1:dim(third_candidate)[1]){
+      candidate3 <- third_candidate[k, ]
+      
+      if(!check3( c(candidate1, candidate2, candidate3) ))
+        next
+      
+      ans <<- c(candidate1, candidate2, candidate3) 
+      print(ans)
+    }
+    
+  }
+  
+}
+
+```
+
+
+***
+
+<h2 dir="RTL">
+مچ گیری
+</h2>
+
+<p dir="RTL">
+میزگردی شامل ۱۶ فرد دروغگو و راستگو تشکیل شده است. هر کسی ادعا میکند دو فرد کنار دستی او دروغگو هستند. چند نفر دروغگو در جمع وجود دارد؟
+</p>
+
+<h3 dir="RTL">
+پاسخ
+</h3>
+
+<p dir="RTL">
+در هر قسمت، تمام حالتها را برای راستگویی و دروغگویی افراد میزها حساب میکنیم. سپس اگر حالت معتبری با شرایط مسئله باشد، تعداد دروغگوها را در این حالت به مجموعه جواب اضافه میکنیم.
+</p>
+
+```{r ans3_1}
+library(gtools)
+
+check <- function(a){
+  if( a[1] & (a[16] | a[2]) )
+    return(F)
+  if( !a[1] &(!a[16] & !a[2]) )
+    return(F)
+  if( a[16] & (a[1] | a[15]))
+    return(F)
+  if( !a[16] & (!a[1] & !a[15]))
+    return(F)
+  
+  for (i in 2:15) {
+    if(a[i] & (a[i+1] | a[i-1]))
+      return(F)
+    if( !a[i] & (!a[i+1] & !a[i-1]))
+      return(F)
+  }
+  return(T)
+}
+
+people_possibilties = permutations(2, 16, c(T,F), repeats.allowed = T)
+
+
+ans <- c()
+
+for(i in 1:nrow(people_possibilties)){
+  if(check(people_possibilties[i, ]))
+    ans<<-c(ans,16-(sum(people_possibilties[i, ])) )
+}
+
+print(unique(ans))
+```
+
+
+<p dir="RTL">
+میزگرد دیگری شامل ۱۲ نفر فرد راستگو و دروغگو تشکیل شده به طوری که هر فرد ادعا میکند از میان دو نفر کنار دستی یک نفر راستگو و یک نفر دروغگو هستند. چند نفر دروغگو در جمع وجود دارد؟
+</p>
+
+
+<h3 dir="RTL">
+پاسخ
+</h3>
+
+```{r ans3_2}
+library(gtools)
+
+people_possibilities = permutations(2, 12, c(T,F), repeats.allowed = T)
+
+check <- function(a){
+  if(a[1] & !(sum(c(a[12],a[2])) == 1))
+    return(F)
+  if(!a[1] & (sum(c(a[12],a[2])) == 1))
+    return(F)
+  if(a[12] & !(sum(c(a[11],a[1])) == 1))
+    return(F)
+  if(!a[12] & (sum(c(a[11],a[1])) == 1))
+    return(F)
+  
+  for(i in 2:11){
+    if(a[i] & !(sum(c(a[i-1],a[i+1])) == 1))
+      return(F)
+    if(!a[i] & (sum(c(a[i-1],a[i+1])) == 1))
+      return(F)
+  }
+  return(T)
+}
+
+ans <- c()
+
+for(i in 1:nrow(people_possibilities)){
+  if(check(people_possibilities[i,]))
+    ans <<- c(ans, 12 - sum(people_possibilities[i,]))
+}
+
+print(unique(ans))
+
+```
+
+<p dir="RTL">
+این دفعه میزگردی هشت نفره تشکیل شده به گونه ایی که چهار نفر ادعا میکنند از از میان دو نفر کنار دستی یکی دروغگو و دیگری راستگوست و چهار نفر دیگر اعلام میکنند که هر دو فرد کنار دستی آنها دروغگو هستند. چند نفر دروغگو در میان جمع است؟
+</p>
+
+
+<h3 dir="RTL">
+پاسخ
+</h3>
+
+```{r ans3_3}
+library(gtools)
+
+people_possiblities = permutations(2, 8, c(T,F), repeats.allowed = T)
+type_possiblities = combinations(8,4)
+
+check_type1 <- function(a, i){
+  if( i == 1 ){
+    if( a[1] & (a[8] | a[2]) )
+      return(F)
+    if( !a[1] &(!a[8] & !a[2]) )
+      return(F)
+  }else if( i == 8 ){
+    if( a[8] & (a[1] | a[7]))
+      return(F)
+    if( !a[8] & (!a[1] & !a[7]))
+      return(F)
+  } else {
+    if(a[i] & (a[i+1] | a[i-1]))
+      return(F)
+    if( !a[i] & (!a[i+1] & !a[i-1]))
+      return(F)
+  }
+  return(T)
+}
+
+check_type2 <- function(a, i){
+  if(i == 1){
+    if(a[1] & !(sum(c(a[8],a[2])) == 1))
+      return(F)
+    if(!a[1] & (sum(c(a[8],a[2])) == 1))
+      return(F)
+  } else if (i == 8){
+    if(a[8] & !(sum(c(a[7],a[1])) == 1))
+      return(F)
+    if(!a[8] & (sum(c(a[7],a[1])) == 1))
+      return(F)
+  } else {
+    if(a[i] & !(sum(c(a[i-1],a[i+1])) == 1))
+      return(F)
+    if(!a[i] & (sum(c(a[i-1],a[i+1])) == 1))
+      return(F)
+  }
+  return(T)
+}
+
+check <- function(a, t){
+  for (i in 1:8) {
+    if(i %in% t){
+      if(!check_type1(a,i))
+        return(F)
+    } else {
+      if(!check_type2(a,i))
+        return(F)
+    }
+  }
+  return(T)
+}
+
+ans <- c()
+
+for (i in 1:nrow(people_possiblities)) {
+  people = people_possiblities[i, ]
+  
+  for(j in 1:nrow(type_possiblities)){
+    types = type_possiblities[j, ]
+    
+    if(check(people, types))
+      ans <<- c(ans, 8 - sum(people))
+    
+  }
+  
+}
+
+print(unique(ans))
+
+```
+

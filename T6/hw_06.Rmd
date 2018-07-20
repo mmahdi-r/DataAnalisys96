@@ -1,0 +1,353 @@
+---
+title: "Sixth Week: Linear Models"
+subtitle: "House price prediction"
+author: "محمد مهدی رفیعی ۹۵۱۰۰۶۱۵"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/house.jpg"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با توجه به داده های قیمت منازل
+لطفا با سوالات زیر پاسخ دهید.
+</p>
+
+```{r set-up, message=F}
+library(tidyverse)
+house = read_csv("house/train.csv")
+library(reshape2)
+library(car)
+library(Hmisc)
+library(lawstat)
+house %>% select_if(is.numeric) -> numeric_house
+```
+
+
+***
+
+<p dir="RTL">
+۱. ماتریس همبستگی متغیرهای مختلف را به دست آورده و سپس رسم نمایید.
+اعداد به دست آمده را با آزمون فرض معناداری همبستگی بسنجید و سپس ده متغیری که همبستگی بالاتری با قیمت دارند را مشخص نمایید.
+</p>
+
+```{r}
+numeric_house %>% cor(use = "complete.obs") -> cor_matrix
+
+cor_matrix %>% melt %>% ggplot + geom_tile(aes(x = Var1, y = Var2, fill = value)) +
+    theme(axis.text.x=element_text(angle=60,hjust=0.5,vjust=0.6))+
+    ggtitle("correlations")
+
+res <- rcorr(as.matrix(numeric_house))
+
+res$P %>% melt %>% ggplot + geom_tile(aes(x = Var1, y = Var2, fill = value)) +
+    theme(axis.text.x=element_text(angle=60,hjust=0.5,vjust=0.6)) +
+    ggtitle("p-values of correlation", subtitle = "low p-value means real correlation") 
+
+cor_matrix %>% 
+    melt %>%
+    filter(Var1 == 'SalePrice' & Var2 != 'SalePrice') %>%
+    mutate(correlation = abs(value)) %>% 
+    select(feature = Var2, correlation) %>% 
+    arrange(desc(correlation)) %>% 
+    head(10) %>% 
+    .$feature -> features
+
+melt(res$P) %>% filter(Var1 == "SalePrice" & Var2 %in% features)
+
+```
+
+<p dir="RTL">
+صفر بودن p-value های بالا یعنی رگرسورهای خوبی انتخاب شدهاند.
+</p>
+
+***
+
+<p dir="RTL">
+۲. در یک تصویر نمودار پراکنش دو به دو ده متغیر بدست آمده به همراه قیمت را رسم نمایید و هم خطی بودن متغیرها را بررسی کنید
+</p>
+
+```{r}
+subset(house, select = c(as.vector(features), 'SalePrice')) -> learn_table
+scatterplotMatrix(learn_table)
+```
+
+
+***
+
+<p dir="RTL">
+۳. یک مدل خطی بر اساس ده متغیر برای پیش بینی قیمت برازش دهید. و سپس خلاصه نتایج مدل را به دست آورید.
+</p>
+
+```{r}
+learn_table %>% arrange(SalePrice) -> learn_table
+
+fit <- lm (SalePrice ~ 
+              OverallQual +
+              GrLivArea +
+              GarageCars +
+              GarageArea +
+              TotalBsmtSF + 
+              `1stFlrSF` + 
+              FullBath + 
+              TotRmsAbvGrd + 
+              YearBuilt + 
+              YearRemodAdd ,
+          data = learn_table)
+
+summary(fit)
+```
+
+
+***
+
+<p dir="RTL">
+۴. نمودار قیمت واقعی و قیمت پیش بینی را رسم نمایید و خوب بودن مدل را ارزیابی کنید.
+</p>
+
+```{r}
+data_frame(id = c(1:nrow(learn_table)),
+           fitted = fit$fitted.values,
+           real = learn_table$SalePrice) %>% 
+    ggplot() +
+    geom_point(aes(x = real, y = fitted), color = "blue") +
+    geom_abline(slope = 1, intercept = 0, color = "red") 
+```
+
+
+***
+
+<p dir="RTL">
+۵. مقدار
+R-squared
+ مدل را به دست آورید. آیا بر اساس این کمیت مدل به خوبی به داده ها برازش داده شده است؟
+ کمیت
+ F-statistic
+ را در خلاصه مدل تفسیر نمایید.
+</p>
+
+```{r}
+summary(fit)
+```
+
+<p dir="RTL">
+R-squared
+برابر
+0.77
+است که نشان میدهد مدل تقریبا مقدار خوبی از قیمت را میتواند پیشبینی کند.
+مقدار 
+p-value
+برای 
+F-statistic
+نشان میدهد که فرض صفر بودن همه ضرایب غلط است و مدل واقعا در حال پیش بینی است.
+</p>
+
+***
+
+<p dir="RTL">
+۶. بر اساس
+p-value
+ سطح معناداری ضرایب تصمیم بگیرید که چه متغیرهایی در مدل سازی استفاده شود.
+بر اساس متغیرهای جدید دوباره مدل سازی کنید و نتایج رو گزارش دهید.
+</p>
+```{r}
+
+fit2 = lm(SalePrice ~ 
+             OverallQual +
+             GrLivArea + 
+             GarageCars +
+             TotalBsmtSF +
+             `1stFlrSF` +
+             FullBath +
+             YearBuilt +
+             YearRemodAdd ,
+         data = learn_table)
+
+summary(fit2)
+
+
+data_frame(id = c(1:nrow(learn_table)),
+           fitted = fit$fitted.values,
+           real = learn_table$SalePrice) %>% 
+    ggplot() +
+    geom_point(aes(x = real, y = fitted), color = "blue") +
+    geom_abline(slope = 1, intercept = 0, color = "red")  +
+    ggtitle("first model")
+
+data_frame(id = c(1:nrow(learn_table)),
+           fitted = fit2$fitted.values,
+           real = learn_table$SalePrice) %>% 
+    ggplot() +
+    geom_point(aes(x = real, y = fitted), color = "blue") +
+    geom_abline(slope = 1, intercept = 0, color = "red")  +
+    ggtitle("second model")
+
+```
+
+<p dir="RTL">
+همان طور که مشاهده میشود بین دو مدل اول و دوم که با کم کردن رگرسورها به دست آمده است،
+تنها عاملی که بین دو مدل تفاوت دارد 
+F-statistic
+است و خطا و 
+R-square
+و حتی خود پیش بینی بهتر نشده است.
+دلیل این امر این است که عوامل پاک شده تاثیر کمی بر پیش بینی داشتهاند،یعنی در مدل اول هم تاثیری بر پیشبینی ندارند.
+اما علت زیاد شدن 
+f-statistic
+این است که این متغیرها کمترین ضریب را داشتند و با حذف آنها ضرایب بزرگتر شده اند.
+</p>
+
+***
+
+<p dir="RTL">
+۷. مدل خود را بر اساس باقی مانده نقص یابی کنید.
+سه محک 
+normality, independance, Constant Variance
+ را در نقص یابی خود در نظر بگیرید.
+</p>
+
+```{r}
+acf(fit2$residuals)
+runs.test(fit$residuals)
+durbinWatsonTest(fit)
+
+```
+
+<p dir="RTL">
+independence: <br>
+میخواهیم چک کنیم که خطاها مستقل باشند
+با توجه به نمودار(همه خطوط عمودی غیر از اولی نزدیک صفر هستند) و 
+p-value
+های تستها که فرض صفر  آنها وابسته بودن خطاهاست ، نتیجه میگیریم که خطاها وابسته هستند 
+</p>
+
+```{r}
+qqPlot(fit, id.method="identify", simulate = TRUE, main="Q-Q Plot")
+```
+<p dir="RTL">
+طبق نمودار خطا تقریبا نرمال است.
+</p>
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit)
+```
+<p dir="RTL">
+اگر واریانس خطا ثابت باشد در دو نمودار چپ، خط افقی حول صفر بود و شاهد خطی صاف بودیم.
+</p>
+
+***
+
+<p dir="RTL">
+۸. داده ها را به پنج قسمت تقسیم کنید. بر اساس چهار قسمت مدل خطی را بسازید و صحت مدل را برای یک قسمت 
+باقی مانده را تست کنید. خطای پیش بینی شما چقدر است؟
+</p>
+
+```{r}
+sample <- sample.int(n = nrow(house), size = floor(.80*nrow(house)), replace = F)
+house.train <- house[sample, ]
+house.test  <- house[-sample, ]
+
+fit <- lm(SalePrice ~ 
+              OverallQual +
+              GrLivArea +
+              GarageCars +
+              TotalBsmtSF + 
+              `1stFlrSF` +
+              FullBath + 
+              YearBuilt + 
+              YearRemodAdd ,
+          data = house.train)
+
+predict.lm(fit, house.test) -> predicted_values
+house.test$SalePrice -> real_values
+real_values - predicted_values -> residuals
+
+mean(residuals^2) -> mse
+mse
+```
+
+
+***
+
+<p dir="RTL"> 
+۹. آیا قیمت ربط غیر خطی با یکی از ده متغیر استفاده شده دارد؟
+بر اساس دستاوردهای خود مدل را بهتر نمایید.
+</p>
+
+```{r}
+ggplot(house, mapping = aes(y = SalePrice, x = OverallQual)) +
+    geom_jitter() +
+    geom_smooth()
+```
+<p dir="RTL">
+با رسم نمودارهایی مانند بالا به مدل زیر رسیدیم.
+</p>
+
+```{r}
+fit <- lm(SalePrice ~ 
+              OverallQual + I(OverallQual^2) +
+              GrLivArea + 
+              GarageCars +
+              TotalBsmtSF + 
+              `1stFlrSF` +
+              FullBath + 
+              YearBuilt + 
+              OverallCond + I(OverallCond^2) +
+              YearRemodAdd ,
+          data = house.train)
+
+predict.lm(fit, house.test) -> predicted_values
+house.test$SalePrice -> real_values
+real_values - predicted_values -> residuals
+
+mean(residuals^2) -> mse
+mse
+```
+
+
+***
+
+<p dir="RTL"> 
+۱۰. بر اساس مدل نهایی به دست آمده نتایج پیش بینی خود را بر روی
+test.csv
+به دست آورید و در سایت 
+kaggle
+ در مسابقه 
+ House Prices: Advanced Regression Techniques
+بارگذاری نمایید. سپس لینک رتبه و عدد آن را ضمیمه تمرین کنید.
+</p>
+
+```{r}
+test = read_csv("house/test.csv")
+
+fit <- lm(SalePrice ~ 
+              OverallQual + I(OverallQual^2) +
+              GrLivArea + 
+              GarageCars +
+              TotalBsmtSF + 
+              `1stFlrSF` +
+              FullBath + 
+              YearBuilt + 
+              OverallCond + I(OverallCond^2) +
+              YearRemodAdd ,
+          data = house)
+
+predict.lm(fit, test) -> predicted_values
+mean(predicted_values, na.rm = T) -> m
+predicted_values[is.na(predicted_values)] <- m
+test %>% 
+    mutate(SalePrice = predicted_values) %>% 
+    select(Id, SalePrice) %>% 
+    write.csv('mysubmission.csv', row.names = F)
+```
+
+
+<div align="center">
+<img  src="kaggle.png"  align = 'center'>
+</div>
